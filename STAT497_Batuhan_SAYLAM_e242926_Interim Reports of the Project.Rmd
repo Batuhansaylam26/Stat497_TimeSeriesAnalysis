@@ -1,0 +1,1093 @@
+---
+title: "STAT497 project"
+author: "Batuhan SAYLAM"
+date: "2023-12-19"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+
+Data will be updated weekly\
+
+Each new record is accumulated data from previous days\
+
+This is the dataset that describes Equipment Losses & Death Toll & Military Wounded & Prisoner of War of russians in 2022 Ukraine russia War.\
+
+
+Data:
+\
+
+  russia_losses_equipment.csv - contains Equipment Losses during the war
+\
+
+
+Data Sources:
+\
+
+  Main data sources are General Staff of the Armed Forces of Ukraine and Ministry of Defence of Ukraine. Data from different battlefields are gathered. The calculation is complicated by the high intensity of hostilities. Data are being updated.
+\  
+  https://www.kaggle.com/datasets/piterfm/2022-ukraine-russian-war
+\
+Tracking:
+\
+  Aircraft\
+  Helicopter\
+  Tank\
+  Armored Personnel Carrier (APC)\
+  Multiple Rocket Launcher (MRL)\
+  Field Artillery\
+  Military Auto - has not been tracked since 2022-05-01; joined with Fuel Tank into Vehicles and Fuel Tanks\
+  Fuel Tank - has not been tracked since 2022-05-01; joined with Military Auto into Vehicles and Fuel Tanks\
+  Anti-aircraft warfare\
+  Drone - UAV+RPA\
+  Naval Ship - Warships, Boats\
+  Anti-aircraft Warfare\
+  Mobile SRBM System - has not been tracked since 2022-05-01; joined into Cruise Missiles\
+  Vehicles and Fuel Tanks - appear since 2022-05-01 as a sum of Fuel Tank and Military Auto\
+  Cruise Missiles - appear since 2022-05-01\
+  Direction of Greatest Losses - appear since 2022-04-25\
+
+Acronyms:
+\
+  MRL - Multiple Rocket Launcher,\
+  APC - Armored Personnel Carrier,\
+  SRBM - Short-range ballistic missile,\
+  UAV - Unmanned Aerial Vehicle,\
+  RPA - Remotely Piloted Vehicle.\
+
+Dataset History:
+\
+
+  2022-03-02 - dataset is created (after 7 days of the War).\
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+library(TSstudio)
+library(dplyr)
+library(forecast)
+library(ggplot2)
+library(ggfortify)
+library(MASS)
+library(tseries)
+library(fUnitRoots)
+library(pdR)
+library(uroot)
+library(TSA)
+library(tidyverse)
+library(tibbletime)
+library(anomalize)
+library(pracma)
+library(gridExtra)
+library(prophet)
+library(zoo)
+
+```
+
+
+```{r}
+data=read.csv("C:/Users/ASUS/Desktop/time series project/2022 Russia Ukraine War.csv")
+data1=data
+data=data[,c("date","tank")]
+data["date"]=as.Date(data$date,format="%Y-%m-%d")
+data
+```
+
+
+
+```{r}
+data2<- data %>% dplyr::mutate(year = lubridate::year(date), month = lubridate::month(date))
+data2$month<-as.factor(data2$month)
+data2$year<-as.factor(data2$year)
+```
+
+```{r}
+data2
+```
+
+```{r}
+data3=read.zoo(data)
+```
+
+
+
+```{r}
+bp <- ggplot(data2, aes(x=month, y=tank, fill=month)) + 
+  geom_boxplot()+
+  labs(title="Boxplot Across Months",x="Month", y = "tank")
+bp
+```
+```{r}
+bp <- ggplot(data2, aes(x=year, y=tank, fill=year)) + 
+  geom_boxplot()+
+  labs(title="Boxplot Across Years",x="year", y = "tank")
+bp
+```
+```{r}
+ggplot(data2, aes(as.numeric(as.character(month)), tank)) + geom_line(aes(colour = year))+xlab("month")
+
+```
+
+```{r}
+acf(data3)
+```
+
+
+```{r}
+pacf(data3)
+```
+
+
+
+```{r}
+data
+```
+
+
+
+```{r}
+head(data3)
+```
+
+
+
+```{r}
+str(data3)
+```
+
+
+```{r}
+summary(data3)
+```
+
+```{r}
+autoplot(data3)
+```
+
+The plot shows us the data has trend and no seasoanlity. Hence, the process is not stationary.\
+
+
+
+```{r}
+data
+```
+
+
+
+```{r}
+split=which(data$date=="2023-10-12")
+train=data[0:split,]
+test=data[(split+1):length(data$date),]
+```
+
+```{r}
+test2=test
+```
+
+```{r}
+traindf <- as_tbl_time(train,index = date)
+class(traindf)
+```
+
+
+
+
+
+```{r}
+traindf %>% 
+  time_decompose(tank, method = "stl", trend = "auto") %>%
+  anomalize(remainder, method = "gesd", alpha = 0.5) %>%
+  plot_anomaly_decomposition()
+```
+
+```{r}
+traindf %>% 
+  time_decompose(tank) %>%
+  anomalize(remainder, method = "gesd", alpha = 0.5) %>%
+  time_recompose() %>%
+  plot_anomalies(time_recomposed = TRUE, ncol = 3, alpha_dots = 0.5)
+```
+
+
+
+
+
+
+
+
+
+```{r}
+
+traindf=traindf %>% 
+  time_decompose(tank, method = "stl", trend = "auto") %>%
+  anomalize(remainder, method = "gesd", alpha = 0.5) %>%
+  filter(anomaly == 'No')  
+
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+train=merge(train["date"],traindf[,c("date","observed")],by="date",all.x = TRUE)
+train["observed"]=tsclean(train$observed)
+train["observed"]=as.numeric(train$observed)
+colnames(train)=c("date","tank")
+
+train=as_tbl_time(train,index=date)
+test=as_tbl_time(test,index=date)
+```
+
+```{r}
+train2=train
+train=read.zoo(train)
+
+```
+
+
+
+```{r}
+ts_plot(train)
+```
+
+```{r}
+b=boxcox(lm(train ~ 1))
+```
+```{r}
+b$x[which.max(b$y)]
+```
+
+
+Since lambda is close to 1, there is no need to transform data. \
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+acf(train)
+```
+
+The ACF plot shows us there exists deterministic trend. \
+
+```{r}
+pacf(train)
+```
+Since the ACF plot shows us that the process is not stationary, no need to look the PACF plot. \
+
+```{r}
+kpss.test(train, null="Level")
+
+```
+Since the p-value is less than 0.05, we reject the null hypothesis and conclude that the  dataset is not stationary.
+
+
+
+
+```{r}
+kpss.test(train, null="Trend")
+
+```
+Since p-value is less than 0.05, the trend is stochastic. \
+
+```{r}
+mean(train)
+```
+Since the mean of the time series is not zero or close to zero, we need to apply ADF test.
+
+```{r}
+adfTest(train, lags=1, type="c") 
+```
+Since p-value is less than 0.05, the process has no unit root. \
+
+There is contradictory between kpss test and adf test so we need to check plots.\
+Since ACF plot has linear decay, we need to differentiate the data. \
+
+```{r}
+pp.test(train)
+```
+
+There is contradictory between kpss test & pp-test  and adf test so we need to check plots.\
+Since ACF plot has linear decay, we need to differentiate the data. \
+
+
+
+
+
+
+
+```{r}
+difftank=diff(train)
+
+```
+
+
+```{r}
+acf(difftank)
+```
+
+
+
+```{r}
+pacf(difftank)
+```
+
+According to the ACF plot, the process still is not stationary.  \
+
+```{r}
+kpss.test(difftank, null="Level")
+
+```
+
+Since the p-value is less than 0.05, we reject the null hypothesis and conclude that the differenced dataset is not stationary.
+
+```{r}
+mean(difftank)
+```
+Since the mean of the time series is not zero or close to zero, we need to apply ADF test.
+
+
+```{r}
+adfTest(difftank, lags=5, type="c") 
+```
+Since p-value is smaller than 0.05, the differenced process has no unit root. \
+
+
+
+Hence, we need to differentiate the differenced process. \
+
+Hence, we need to differentiate the process. \
+
+```{r}
+pp.test(difftank)
+```
+
+
+
+```{r}
+diff2tank=diff(difftank)
+
+```
+
+```{r}
+acf(diff2tank)
+```
+
+
+
+```{r}
+pacf(diff2tank)
+```
+
+
+```{r}
+kpss.test(diff2tank, null="Level")
+
+```
+Since the p-value is greater than 0.05, we fail to reject the null hypothesis and conclude that the differenced dataset is stationary.\
+
+
+```{r}
+mean(diff2tank)
+```
+Since the mean of the time series is  zero, we need to apply pp test.\
+```{r}
+adfTest(diff2tank,lags =4,type = "nc" )
+```
+
+
+```{r}
+pp.test(diff2tank)
+```
+Since p-value is less than 0.05, the differenced process has no unit root. \
+Hence, for model, d=2 (I(2)).
+
+
+
+
+
+```{r}
+acf(diff2tank)
+```
+MA(4) or MA(1)
+
+
+```{r}
+pacf(diff2tank)
+```
+AR(4)
+
+```{r}
+eacf(diff2tank)
+```
+
+According to ACF, PACF, and EACf, the possible models are  ARIMA(4,2,1) and ARIMA(4,2,4).\
+
+
+```{r}
+auto.arima(train)
+```
+
+
+
+```{r}
+checkFit=Arima(train,order = c(4,2,1))
+checkFit
+```
+Since MA(1) is not 1 or close to 1, we did not get much difference.\
+
+```{r}
+ar4=0.0509/0.0451
+ma1=abs(-0.9516/0.0208)
+ar4
+ma1
+```
+
+
+
+
+```{r}
+fit=Arima(train,order = c(3,2,1))
+fit
+```
+
+```{r}
+ar3=0.0243/0.0455
+ma1=abs(-0.9419/0.0217)
+ar3
+ma1
+```
+
+```{r}
+fit1=Arima(train,order = c(2,2,1))
+fit1
+```
+
+```{r}
+ar2=0.1297/0.0466
+ma1=abs(-0.9370/0.0212)
+ar2
+ma1
+```
+Since the parameters are significant, fit1 can be used. \
+
+```{r}
+fit2=Arima(train,order = c(4,2,4))
+fit2
+```
+
+```{r}
+ar4=0.0431/0.0582
+ma4=0.6089/0.1395
+ar4
+ma4
+```
+
+
+```{r}
+fit3=Arima(train,order = c(4,2,3))
+fit3
+```
+
+```{r}
+ar4=0.1581/0.0463
+ma3=abs(-0.9402/0.0222)
+ar4
+ma3
+```
+Since the parameters are significant, fit3 can be used. \
+
+
+```{r}
+fit4=Arima(train,order = c(3,2,4))
+fit4
+```
+
+```{r}
+ar3=0.4459/0.2347
+ma4=0.4042/0.1803
+ar3
+ma4
+```
+
+
+```{r}
+fit5=Arima(train,order = c(3,2,3))
+fit5
+```
+
+```{r}
+ar3=abs(-0.0289/0.0635)
+ma3=0.2091/0.2606
+ar3
+ma3
+```
+
+
+```{r}
+fit6=Arima(train,order = c(2,2,3))
+fit6
+```
+```{r}
+fit7=Arima(train,order = c(2,2,2))
+fit7
+```
+
+
+
+```{r}
+ar2=0.0390/0.0584
+ma2=0.6035/0.1388
+ar2
+ma2
+```
+
+```{r}
+fit7=Arima(train,order = c(2,2,1))
+fit7
+```
+
+```{r}
+ar4=0.0929/0.0503
+ma1=abs(-0.9512/0.0262)
+ar4
+ma1
+```
+
+```{r}
+fit8=Arima(train,order = c(2,2,4))
+fit8
+```
+
+```{r}
+ma4=abs(-0.1575/0.0426)
+ar2=abs(-0.4219/0.2760)
+ar2
+ma4
+```
+
+Since fit3 has lowest AIC, we choose it firstly.
+
+
+
+```{r}
+fit9=Arima(train,order = c(4,1,5))
+fit9
+```
+
+```{r}
+ma4=abs(-0.7272/0.1268)
+ar2=abs(-0.0206/0.0458)
+ar2
+ma4
+```
+```{r}
+fit10=Arima(train,order = c(1,1,5))
+fit10
+```
+
+```{r}
+ma4=abs(0.9989/0.0015)
+ar2=abs(-0.0292/0.0449)
+ar2
+ma4
+```
+
+
+
+fit1=ARIMA(2,2,1) and fit3=ARIMA(4,2,3)
+```{r}
+fit3
+```
+
+
+```{r}
+r=resid(fit3)/sd(residuals(fit3))
+head(r)
+```
+
+```{r}
+autoplot(r)+geom_line(y=0)+theme_minimal()+ggtitle("Plot of The Residuals")
+```
+
+Residuals are scattered around zero and it can be interpreted as zero mean
+
+
+```{r}
+ggplot(r, aes(sample = r)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+QQ Plot shows that most of the residuals of the model does not lie on 45 degree straight line. This indicates residuals are not normally distributed.
+
+
+```{r}
+ggplot(r,aes(x=r))+geom_histogram(bins=20)+geom_density()+ggtitle("Histogram of Residuals")+theme_minimal()
+```
+Histogram of the resiudals shows that they do not have a symmetric distribution.
+
+
+```{r}
+checkresiduals(fit3)
+```
+
+Since p-value is less than 0.05, The model exhibit lack of fit.\
+
+
+```{r}
+g1<-ggAcf(as.vector(r),lag.max = 72)+theme_minimal()+ggtitle("ACF of  Residuals")
+g2<-ggPacf(as.vector(r),lag.max = 72)+theme_minimal()+ggtitle("PACF of  Residuals")  # homoscedasticity check
+grid.arrange(g1,g2,ncol=2)
+```
+There exist significant spikes in the plots.\
+
+```{r}
+shapiro.test(r)
+```
+/
+Now, we cannot continue our analysis with ARIMA(4,2,3). Maybe we can continue fit1 which is ARIMA(2,2,1).
+Let us check dignostics of ARIMA(2,2,1):
+/
+
+
+```{r}
+fit1
+```
+
+```{r}
+r2=resid(fit1)/sd(residuals(fit1))
+
+ggplot(r2, aes(sample = r2)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+
+QQ Plot shows that most of the residuals of the model does not lie on 45 degree straight line. This indicates residuals are not normally distributed.
+
+```{r}
+autoplot(r2)+geom_line(y=0)+theme_minimal()+ggtitle("Plot of The Residuals")
+```
+
+Residuals are scattered around zero and it can be interpreted as zero mean
+
+
+```{r}
+ggplot(r2, aes(sample = r2)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+QQ Plot shows that most of the residuals of the model does not lie on 45 degree straight line. This indicates residuals are not normally distributed.
+
+
+```{r}
+ggplot(r2,aes(x=r2))+geom_histogram(bins=20)+geom_density()+ggtitle("Histogram of Residuals")+theme_minimal()
+```
+Histogram of the resiudals shows that they do not have a symmetric distribution.
+
+
+```{r}
+checkresiduals(fit1)
+```
+
+Since p-value is less than 0.05, The model exhibit lack of fit.\
+
+
+```{r}
+g1<-ggAcf(as.vector(r2),lag.max = 72)+theme_minimal()+ggtitle("ACF of  Residuals")
+g2<-ggPacf(as.vector(r2),lag.max = 72)+theme_minimal()+ggtitle("PACF of  Residuals")  # homoscedasticity check
+grid.arrange(g1,g2,ncol=2)
+```
+There exist significant spikes in the plots.\
+
+
+
+
+
+
+
+```{r}
+g1<-ggAcf(as.vector(r2),lag.max = 72)+theme_minimal()+ggtitle("ACF of Squared Residuals")
+g2<-ggPacf(as.vector(r2),lag.max = 72)+theme_minimal()+ggtitle("PACF of Squared Residuals")  # homoscedasticity check
+grid.arrange(g1,g2,ncol=2)
+```
+
+There exist significant spikes in the plots.\
+
+```{r}
+shapiro.test(r2)
+```
+
+
+/
+Since p value is less than 0.05, we reject null hypothesis which is that the residuals has normality.
+/
+
+
+
+
+
+
+
+```{r}
+m=lm(r~1+zlag(r))
+library(lmtest)
+
+
+bgtest(m, order = 15)
+```
+
+Since p value is less than alpha,  the residuals of the model are correlated, according to results of Breusch-Godfrey Test.
+
+
+```{r}
+m2=lm(r2~1+zlag(r2))
+
+
+bgtest(m2, order = 15)
+```
+Since p value is less than alpha,  the residuals of the model are correlated, according to results of Breusch-Godfrey Test.
+
+
+
+```{r}
+
+
+rr=r^2
+g1<-ggAcf(as.vector(rr))+theme_minimal()+ggtitle("ACF of Squared Residuals")
+g2<-ggPacf(as.vector(rr),lag.max = 72)+theme_minimal()+ggtitle("PACF of Squared Residuals")  # homoscedasticity check
+grid.arrange(g1,g2,ncol=2)
+library(FinTS)
+ArchTest(r)
+
+
+
+```
+There exist significant spikes in plots so there exist heteroscedasticity problem. Also, since p value is greater than 0.05, residuals exhibit no ARCH effects.
+
+
+```{r}
+
+
+rr2=r2^2
+g1<-ggAcf(as.vector(rr2),lag.max = 72)+theme_minimal()+ggtitle("ACF of Squared Residuals")
+g2<-ggPacf(as.vector(rr2),lag.max = 72)+theme_minimal()+ggtitle("PACF of Squared Residuals")  # homoscedasticity check
+grid.arrange(g1,g2,ncol=2)
+library(FinTS)
+ArchTest(r2)
+
+
+
+```
+
+
+There exist significant spikes in plots so there exist heteroscedasticity problem. Also, since p value is greater than 0.05, residuals exhibit no ARCH effects.\
+
+Now, we can continue our analysis with fit1 which is ARIMA(2,2,1) since it does not exhibit lack of fit.\
+
+
+```{r}
+set.seed(497)
+```
+```{r}
+test=read.zoo(test)
+```
+
+
+```{r}
+f=forecast(fit1,h=length(test))
+
+```
+
+```{r}
+summary(f)
+```
+
+
+
+
+
+```{r}
+ets=ets(train,model = "ZZZ")
+etsforc=forecast(ets,h=length(test))
+```
+
+```{r}
+summary(ets)
+```
+
+
+
+```{r}
+r=etsforc$residuals
+
+ggplot(r, aes(sample = r)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+```{r}
+autoplot(r)+geom_line(y=0)+theme_minimal()+ggtitle("Plot of The Residuals")
+```
+
+```{r}
+ggplot(r,aes(x=r))+geom_histogram(bins=20)+geom_density()+ggtitle("Histogram of Residuals")+theme_minimal()
+```
+
+
+```{r}
+shapiro.test(r)
+```
+
+
+
+
+```{r}
+nnetar.m=nnetar(train)
+nnetar_forecast<-forecast(nnetar.m,h=length(test))
+```
+
+```{r}
+nnetar.m$method
+```
+
+```{r}
+nnetar.m$call
+```
+
+
+
+```{r}
+nnetar.m$model
+```
+
+
+```{r}
+r=nnetar.m$residuals
+
+ggplot(r, aes(sample = r)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+```{r}
+autoplot(r)+geom_line(y=0)+theme_minimal()+ggtitle("Plot of The Residuals")
+```
+
+```{r}
+ggplot(r,aes(x=r))+geom_histogram(bins=20)+geom_density()+ggtitle("Histogram of Residuals")+theme_minimal()
+```
+
+
+```{r}
+shapiro.test(r)
+```
+
+
+
+
+```{r}
+tbatsmodel<-tbats(ts(train))
+tbats_forecast<-forecast(tbatsmodel,h=length(test))
+```
+
+```{r}
+tbatsmodel
+```
+
+
+```{r}
+r=ts(tbats_forecast$residuals)
+
+ggplot(r, aes(sample = r)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+```{r}
+autoplot(r)+geom_line(y=0)+theme_minimal()+ggtitle("Plot of The Residuals")
+```
+
+```{r}
+ggplot(r,aes(x=r))+geom_histogram(bins=20)+geom_density()+ggtitle("Histogram of Residuals")+theme_minimal()
+```
+
+```{r}
+shapiro.test(r)
+```
+
+
+
+```{r}
+changepoint_prior_scale=c(0.001, 0.01, 0.1, 0.5)
+changepoint_range=c(0.8,0.85,0.90, 0.95)
+```
+
+
+
+
+```{r}
+
+colnames(train2)=c("ds","y")
+for(i in changepoint_prior_scale){
+  for(j in changepoint_range){
+    prophet.m=prophet(train2,daily.seasonality = FALSE,yearly.seasonality = FALSE,changepoint.prior.scale =i ,changepoint.range =j   )
+    future=make_future_dataframe(prophet.m, periods = 31)
+    prophet_forecast=predict(prophet.m,future)
+    print(i)
+    print(j)
+    k=data.frame(accuracy(prophet_forecast$yhat,test))
+    rownames(k)=paste(as.character(i),as.character(j),sep = "-")
+    print(k)
+    
+}}
+
+```
+
+
+```{r}
+
+prophet.m=prophet(train2,daily.seasonality = FALSE,yearly.seasonality = FALSE,changepoint.prior.scale =0.001,changepoint.range =0.9   )
+future=make_future_dataframe(prophet.m, periods = length(test))
+prophet_forecast=predict(prophet.m,future)
+```
+```{r}
+prophet.m$fit.kwargs
+```
+
+
+```{r}
+r=ts(prophet_forecast$yhat-data$tank)
+checkresiduals(r)
+```
+
+Since p-value is greater than 0.05, The model does not exhibit lack of fit.\
+
+```{r}
+ggplot(r, aes(sample = r)) +stat_qq()+geom_qq_line()+ggtitle("QQ Plot of the Residuals")+theme_minimal()
+```
+```{r}
+autoplot(r)+geom_line(y=0)+theme_minimal()+ggtitle("Plot of The Residuals")
+```
+
+```{r}
+ggplot(r,aes(x=r))+geom_histogram(bins=20)+geom_density()+ggtitle("Histogram of Residuals")+theme_minimal()
+```
+
+```{r}
+shapiro.test(r)
+```
+
+
+
+
+
+
+
+
+```{r}
+print("ARIMA(2,2,1)")
+accuracy(f,test)
+print("ETS")
+accuracy(etsforc,test)
+print("NNETAR")
+accuracy(nnetar_forecast,test)
+print("TBATS")
+accuracy(tbats_forecast,test)
+print("Prophet")
+accuracy(prophet_forecast$yhat,test)
+```
+The best model is Holt's method and the worst model is Prophet. \
+
+```{r}
+
+data_new=data
+
+
+Series=ts(data_new$tank,start = 19048,end =19547 )
+
+```
+
+```{r}
+autoplot(f,series="ARIMA",color="blue")+autolayer(Series)+autolayer(fitted(fit1),color = "red", series="Fitted",linetype="dashed") + geom_vline(xintercept =19643	 )+
+  ggplot2::ggtitle("ARIMA")+theme_minimal()+theme(legend.position="bottom")
+```
+
+
+
+
+
+
+
+
+```{r}
+plot(etsforc)
+```
+
+
+```{r}
+
+autoplot(etsforc,series="ETS",color="red")+autolayer(Series)+autolayer(fitted(etsforc),series="Fitted",linetype="dashed") + geom_vline(xintercept =19643	 )+
+  ggplot2::ggtitle("ETS")+theme_minimal()+theme(legend.position="bottom")
+```
+
+
+```{r}
+plot(nnetar_forecast)
+```
+
+
+```{r}
+autoplot(Series,main="nnetar_forecast")+autolayer(nnetar_forecast) +autolayer(fitted(nnetar_forecast), series="Fitted",linetype="dashed")+ geom_vline(xintercept =19643	 )+
+  ggplot2::ggtitle("NNETAR") +theme_minimal()+theme(legend.position="bottom")
+```
+
+
+
+
+```{r}
+Series2=ts(data_new$tank,start =1 )
+
+```
+
+
+
+```{r}
+plot(tbats_forecast)
+```
+
+
+```{r}
+autoplot(Series2,series="data",color="red")+autolayer(tbats_forecast,series="Forecast")+autolayer(fitted(tbats_forecast),series="Fitted",linetype="dashed") + geom_vline(xintercept =595	 )+
+  ggplot2::ggtitle("TBATS")+theme_minimal()+theme(legend.position="bottom")
+
+
+
+
+```
+
+
+
+
+```{r}
+
+plot(prophet.m,prophet_forecast)
+
+```
+
+
+
+
+
